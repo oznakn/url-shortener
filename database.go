@@ -1,55 +1,69 @@
 package main
 
 import (
+	"crypto/rand"
 	"database/sql"
-	_ "github.com/mattn/go-sqlite3"
+	"fmt"
 	"log"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 // Database interface
 type Database interface {
-	Get(id int) (string, error)
-	Save(url string) (int64, error)
+	Get(short string) (string, error)
+	Save(url string) (string, error)
 }
 
 type sqlite struct {
 	Path string
 }
 
-func (s sqlite) Save(url string) (int64, error) {
+func randomString() string {
+	b := make([]byte, 16)
+	_, err := rand.Read(b)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return fmt.Sprintf("%x", b[0:4])
+}
+
+func (s sqlite) Save(url string) (string, error) {
 	db, err := sql.Open("sqlite3", s.Path)
 	tx, err := db.Begin()
 	if err != nil {
-		return 0, err
+		return "", err
 	}
-	stmt, err := tx.Prepare("insert into urls(url) values(?)")
+	stmt, err := tx.Prepare("insert into urls(url, short) values(?, ?)")
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 	defer stmt.Close()
-	result, err := stmt.Exec(url)
+
+	short := randomString()
+	fmt.Println(short)
+
+	_, err = stmt.Exec(url, short)
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return 0, nil
-	}
 	tx.Commit()
-	//result
-	return id, nil
+
+	return short, nil
 }
 
-func (s sqlite) Get(id int) (string, error) {
+func (s sqlite) Get(short string) (string, error) {
 	db, err := sql.Open("sqlite3", s.Path)
-	stmt, err := db.Prepare("select url from urls where id = ?")
+	stmt, err := db.Prepare("select url from urls where short = ?")
 	if err != nil {
 		return "", err
 	}
 	defer stmt.Close()
 	var url string
-	err = stmt.QueryRow(id).Scan(&url)
+	err = stmt.QueryRow(short).Scan(&url)
 	if err != nil {
 		return "", err
 	}
@@ -63,7 +77,7 @@ func (s sqlite) Init() {
 	}
 	defer c.Close()
 
-	sqlStmt := `create table if not exists urls (id integer not null primary key, url text);`
+	sqlStmt := `create table if not exists urls (id integer not null primary key, url text, short text);`
 	_, err = c.Exec(sqlStmt)
 	if err != nil {
 		log.Fatal(err)
